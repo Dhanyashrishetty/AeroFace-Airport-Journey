@@ -1,0 +1,305 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+};
+
+interface SendEmailRequest {
+  emailType?: "confirmation" | "payment-receipt" | "boarding-pass";
+  passengerId: string;
+  recipientEmail: string;
+  passengerName: string;
+  ticketNo: string;
+  flightNo: string;
+  origin: string;
+  destination: string;
+  departure: string;
+  arrival: string;
+  seatNo: string;
+  terminal: string;
+  gate: string;
+  price: number;
+  paymentId: string;
+  /** Optional PDF attachment as base64 (no data: prefix) */
+  pdfBase64?: string;
+  pdfFilename?: string;
+}
+
+function esc(s: string) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function fmt(iso: string) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function buildContent(body: SendEmailRequest) {
+  const emailType = body.emailType ?? "boarding-pass";
+  const priceStr = `₹${Number(body.price || 0).toLocaleString("en-IN")}`;
+  const name = esc(body.passengerName);
+  const flight = esc(body.flightNo);
+  const ticket = esc(body.ticketNo);
+  const origin = esc(body.origin);
+  const dest = esc(body.destination);
+  const seat = esc(body.seatNo);
+  const terminal = esc(body.terminal);
+  const gate = esc(body.gate);
+  const payId = esc(body.paymentId);
+
+  if (emailType === "confirmation" || emailType === "payment-receipt") {
+    const subject = `Payment Receipt — ${body.flightNo} · ${body.ticketNo}`;
+    const text = `Dear ${body.passengerName},
+
+PAYMENT RECEIPT
+Amount: ${priceStr}
+Payment ID: ${body.paymentId}
+Status: PAID
+Ticket: ${body.ticketNo}
+Flight: ${body.flightNo}
+Route: ${body.origin} → ${body.destination}
+Departure: ${fmt(body.departure)}
+
+Your boarding pass PDF will be available after Check-In.
+
+— AeroFace Airport System`;
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 12px">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.08)">
+        <tr><td style="background:#0f172a;padding:20px 28px">
+          <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:0.5px">AEROFACE</div>
+          <div style="color:#94a3b8;font-size:12px;margin-top:4px">Payment Receipt</div>
+        </td></tr>
+        <tr><td style="padding:28px">
+          <div style="display:inline-block;background:#ecfdf5;color:#047857;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px">✓ PAYMENT SUCCESSFUL</div>
+          <h1 style="margin:16px 0 8px;font-size:22px;color:#0f172a">Thank you, ${name}</h1>
+          <p style="margin:0 0 20px;color:#64748b;font-size:14px;line-height:1.5">Your booking is confirmed. A detailed receipt is attached${body.pdfBase64 ? " as PDF" : ""}.</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">
+            <tr><td style="padding:16px 20px">
+              <table width="100%" cellpadding="6" cellspacing="0" style="font-size:13px">
+                <tr><td style="color:#64748b">Amount paid</td><td align="right" style="color:#0f172a;font-weight:700;font-size:16px">${priceStr}</td></tr>
+                <tr><td style="color:#64748b">Payment ID</td><td align="right" style="color:#0f172a;font-family:monospace;font-size:12px">${payId}</td></tr>
+                <tr><td style="color:#64748b">Status</td><td align="right" style="color:#047857;font-weight:700">PAID</td></tr>
+                <tr><td style="color:#64748b">Ticket</td><td align="right" style="color:#0f172a">${ticket}</td></tr>
+                <tr><td style="color:#64748b">Flight</td><td align="right" style="color:#0f172a;font-weight:600">${flight}</td></tr>
+                <tr><td style="color:#64748b">Route</td><td align="right" style="color:#0f172a">${origin} → ${dest}</td></tr>
+                <tr><td style="color:#64748b">Departure</td><td align="right" style="color:#0f172a">${esc(fmt(body.departure))}</td></tr>
+                <tr><td style="color:#64748b">Seat</td><td align="right" style="color:#0f172a">${seat}</td></tr>
+              </table>
+            </td></tr>
+          </table>
+          <p style="margin:20px 0 0;color:#64748b;font-size:13px;line-height:1.5">
+            <strong style="color:#0f172a">Next steps:</strong> Arrive at the airport → face scan at Entry → Check-In for boarding pass → Security → Gate.
+          </p>
+        </td></tr>
+        <tr><td style="background:#f8fafc;padding:16px 28px;border-top:1px solid #e2e8f0">
+          <div style="color:#94a3b8;font-size:11px">AeroFace Seamless Airport Journey · This is an automated receipt.</div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+    return { subject, text, html, emailType };
+  }
+
+  const subject = `Boarding Pass — ${body.flightNo} · ${body.ticketNo}`;
+  const text = `Dear ${body.passengerName},
+
+Your boarding pass is ready${body.pdfBase64 ? " (PDF attached)" : ""}.
+
+Flight: ${body.flightNo}
+Route: ${body.origin} → ${body.destination}
+Departure: ${fmt(body.departure)}
+Seat: ${body.seatNo} · Terminal ${body.terminal} · Gate ${body.gate}
+Ticket: ${body.ticketNo}
+
+Please present this pass (or face scan) at the boarding gate.
+
+— AeroFace Airport System`;
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 12px">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.08)">
+        <tr><td style="background:#0f172a;padding:20px 28px">
+          <div style="color:#fff;font-size:18px;font-weight:700">AEROFACE</div>
+          <div style="color:#94a3b8;font-size:12px;margin-top:4px">Boarding Pass</div>
+        </td></tr>
+        <tr><td style="padding:28px">
+          <div style="display:inline-block;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px">✈ BOARDING PASS READY</div>
+          <h1 style="margin:16px 0 4px;font-size:20px;color:#0f172a">${name}</h1>
+          <p style="margin:0 0 20px;color:#64748b;font-size:13px">Ticket ${ticket}${body.pdfBase64 ? " · PDF attached" : ""}</p>
+
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:12px;color:#fff">
+            <tr><td style="padding:20px 24px">
+              <table width="100%"><tr>
+                <td style="font-size:28px;font-weight:700">${esc(body.origin.match(/\(([A-Z]{3})\)/)?.[1] || body.origin.slice(0, 3))}</td>
+                <td align="center" style="color:#38bdf8;font-size:18px">→</td>
+                <td align="right" style="font-size:28px;font-weight:700">${esc(body.destination.match(/\(([A-Z]{3})\)/)?.[1] || body.destination.slice(0, 3))}</td>
+              </tr>
+              <tr>
+                <td style="font-size:11px;color:#94a3b8;padding-top:4px">${origin}</td>
+                <td></td>
+                <td align="right" style="font-size:11px;color:#94a3b8;padding-top:4px">${dest}</td>
+              </tr></table>
+              <table width="100%" style="margin-top:18px;font-size:12px" cellpadding="4">
+                <tr>
+                  <td style="color:#94a3b8">Flight<br/><span style="color:#fff;font-size:15px;font-weight:700">${flight}</span></td>
+                  <td style="color:#94a3b8">Depart<br/><span style="color:#fff;font-size:15px;font-weight:700">${esc(fmt(body.departure))}</span></td>
+                </tr>
+                <tr>
+                  <td style="color:#94a3b8;padding-top:10px">Terminal / Gate<br/><span style="color:#fff;font-size:15px;font-weight:700">${terminal} / ${gate}</span></td>
+                  <td style="color:#94a3b8;padding-top:10px">Seat<br/><span style="color:#fff;font-size:15px;font-weight:700">${seat}</span></td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+
+          <p style="margin:20px 0 0;color:#64748b;font-size:13px;line-height:1.5">
+            Show this email or the attached PDF at the gate. You can also use face scan at Boarding Gate.
+          </p>
+        </td></tr>
+        <tr><td style="background:#f8fafc;padding:16px 28px;border-top:1px solid #e2e8f0">
+          <div style="color:#94a3b8;font-size:11px">AeroFace Seamless Airport Journey · Face-verified boarding pass</div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+  return { subject, text, html, emailType };
+}
+
+async function sendWithResend(
+  to: string,
+  subject: string,
+  text: string,
+  html: string,
+  pdfBase64?: string,
+  pdfFilename?: string,
+) {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (!apiKey) return { sent: false, provider: null as string | null, error: "RESEND_API_KEY not set" };
+
+  const from = Deno.env.get("RESEND_FROM_EMAIL") ?? "AeroFace <onboarding@resend.dev>";
+
+  const payload: Record<string, unknown> = { from, to: [to], subject, text, html };
+  if (pdfBase64 && pdfBase64.length > 100) {
+    payload.attachments = [
+      {
+        filename: pdfFilename || "document.pdf",
+        content: pdfBase64,
+      },
+    ];
+  }
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { sent: false, provider: "resend", error: data?.message ?? `HTTP ${res.status}` };
+  }
+  return { sent: true, provider: "resend", error: null, id: data?.id };
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  try {
+    const body: SendEmailRequest = await req.json();
+    if (!body.recipientEmail || !body.recipientEmail.includes("@")) {
+      return new Response(
+        JSON.stringify({ success: false, delivered: false, error: "Invalid recipient email" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const { subject, text, html, emailType } = buildContent(body);
+    const defaultName =
+      emailType === "boarding-pass"
+        ? `BoardingPass_${body.flightNo}_${body.ticketNo}.pdf`
+        : `PaymentReceipt_${body.ticketNo}.pdf`;
+
+    const delivery = await sendWithResend(
+      body.recipientEmail,
+      subject,
+      text,
+      html,
+      body.pdfBase64,
+      body.pdfFilename || defaultName,
+    );
+
+    try {
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      );
+      await supabase.from("emails").insert({
+        passenger_id: body.passengerId || null,
+        recipient: body.recipientEmail,
+        recipient_email: body.recipientEmail,
+        subject,
+        body: text,
+        email_type: emailType,
+        pdf_attached: !!body.pdfBase64,
+        status: delivery.sent ? "SENT" : "FAILED",
+      });
+    } catch (e) {
+      console.error("emails table log failed", e);
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        delivered: delivery.sent,
+        provider: delivery.provider,
+        error: delivery.error,
+        message: delivery.sent
+          ? `Email delivered to ${body.recipientEmail}`
+          : `Email not delivered (${delivery.error}). Set RESEND_API_KEY on the edge function.`,
+        subject,
+        body: text,
+        recipientEmail: body.recipientEmail,
+        emailType,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return new Response(
+      JSON.stringify({ success: false, delivered: false, error: message }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+});
