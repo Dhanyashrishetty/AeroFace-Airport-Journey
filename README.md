@@ -1,27 +1,56 @@
-# AeroFace
-### Face-Based Seamless Airport Journey System
+# AeroFace – Face-Based Seamless Airport Journey System
 
-> One face. One journey. From booking to boarding — without repeating ID checks at every gate.
+AeroFace is a web-based airport system that uses **face recognition** for a contactless passenger journey from **booking to boarding**.
 
-AeroFace is a full-stack web system that replaces repeated ticket and document verification with **biometric face recognition across the entire airport journey**.
-
-Passengers register once during booking. After that, every checkpoint — Entry, Check-In, Bag Drop, Security, Immigration, Gate, and Boarding — works through face scan, live status tracking, and next-step guidance.
+Passengers register their face once while booking and paying. At the airport, they scan their face at each checkpoint. The system identifies the passenger, shows booking and flight details, updates journey status, and guides the next step.
 
 ---
 
-<p align="center">
-  <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
-  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
-  <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white" />
-  <img src="https://img.shields.io/badge/Face--API-Biometrics-FF6B6B?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/Resend-Email-000000?style=for-the-badge&logo=resend&logoColor=white" />
-</p>
+## Features
+
+### Booking & Registration
+- Search flights by origin, destination, and date
+- Route-based ticket pricing
+- Passenger details form (domestic / international)
+- Face capture with liveness checks
+- Multi-step payment flow (UPI, GPay, PhonePe, Card, Net Banking UI)
+- Ticket generation and booking confirmation
+
+### Face Recognition Checkpoints
+- Airport Entry
+- Check-In (boarding pass issued)
+- Bag Drop
+- Security
+- Immigration (international)
+- Boarding Gate
+- Boarded
+
+At every checkpoint the system shows:
+- Passenger details
+- Flight details
+- Current status
+- Next step guidance
+
+### Boarding Pass & Email
+- Boarding pass PDF download after Check-In
+- Payment receipt email
+- Boarding pass email
+- Email delivery via Resend (Supabase Edge Function)
+
+### Admin Dashboard
+- Passenger monitoring
+- Flight list
+- Journey logs
+- Alerts
+- Boarding pass email trigger
 
 ---
 
-## Why AeroFace?
-
-Traditional airport flow forces passengers to prove identity again and again:
+## Journey Flow
 
 ```text
-Ticket → ID → Boarding Pass → Ticket → ID → Boarding Pass ...
+Book Flight → Enter Details → Face Registration → Payment
+        ↓
+Airport Entry → Check-In → Bag Drop → Security
+        ↓
+Immigration (International only) → Gate → Boarded
